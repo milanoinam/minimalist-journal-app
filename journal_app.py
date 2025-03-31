@@ -7,8 +7,10 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog
 from tkinter import scrolledtext
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
 
 def generate_key(password: str, salt: bytes = None) -> bytes:
     if salt is None:
@@ -64,23 +66,35 @@ class JournalApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Minimalist Journal")
-        self.root.geometry("600x400")
-        self.root.configure(bg="#282828") #dark theme default.
 
-        self.text_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, font=("monospace", 12), bg="#383838", fg="white", insertbackground="white")
+        # DPI Scaling and Window Size
+        self.root.tk.call('tk', 'scaling', 2.0)
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        window_width = int(screen_width * 0.6)
+        window_height = int(screen_height * 0.6)
+        self.root.geometry(f"{window_width}x{window_height}")
+
+        self.style = ttk.Style(theme="darkly")
+
+        self.text_area = scrolledtext.ScrolledText(root, wrap=tk.WORD, font=("monospace", 12))
         self.text_area.pack(pady=10, padx=10, fill=tk.BOTH, expand=True)
+        self.text_area.configure(background='#383838', foreground='white', insertbackground='white')
 
-        self.password_label = tk.Label(root, text="Password:", bg="#282828", fg="white")
+        self.password_label = ttk.Label(root, text="Password:", style="TLabel")
         self.password_label.pack()
-        self.password_entry = tk.Entry(root, show="*", bg="#383838", fg="white")
+        self.password_entry = ttk.Entry(root, show="*", style="TEntry")
         self.password_entry.pack()
 
-        self.save_button = tk.Button(root, text="Save Entry", command=self.save_journal_entry, bg="#4CAF50", fg="white")
+        self.save_button = ttk.Button(root, text="Save Entry", command=self.save_journal_entry, style="success.TButton")
         self.save_button.pack(pady=10)
 
+        self.menu_button = ttk.Button(root, text="More", command=self.show_menu, style="TButton")
+        self.menu_button.pack(side=tk.LEFT, anchor=tk.SW, padx=10, pady=10)
+
         self.theme_var = tk.BooleanVar()
-        self.theme_var.set(True)  # Dark theme default
-        self.theme_toggle = tk.Checkbutton(root, text="Dark Theme", variable=self.theme_var, command=self.toggle_theme, bg="#282828", fg="white", selectcolor="#282828")
+        self.theme_var.set(True)
+        self.theme_toggle = ttk.Checkbutton(root, text="Dark Theme", variable=self.theme_var, command=self.toggle_theme, style="TCheckbutton")
         self.theme_toggle.pack()
 
     def save_journal_entry(self):
@@ -106,22 +120,90 @@ class JournalApp:
             self.password_entry.delete(0, tk.END)
 
     def toggle_theme(self):
-        if self.theme_var.get():  # Dark theme
-            self.root.configure(bg="#282828")
-            self.text_area.configure(bg="#383838", fg="white", insertbackground="white")
-            self.save_button.configure(bg="#4CAF50", fg="white")
-            self.password_label.configure(bg="#282828", fg="white")
-            self.password_entry.configure(bg="#383838", fg="white")
-            self.theme_toggle.configure(bg="#282828", fg="white", selectcolor="#282828")
-        else:  # Light theme
-            self.root.configure(bg="white")
-            self.text_area.configure(bg="lightgray", fg="black", insertbackground="black")
-            self.save_button.configure(bg="#4CAF50", fg="black")
-            self.password_label.configure(bg="white", fg="black")
-            self.password_entry.configure(bg="lightgray", fg="black")
-            self.theme_toggle.configure(bg="white", fg="black", selectcolor="white")
+        if self.theme_var.get():
+            self.style.configure('.', background='#282828', foreground='white')
+            self.style.configure('TEntry', fieldbackground='#383838', foreground='white')
+            self.text_area.configure(background='#383838', foreground='white', insertbackground='white')
+            self.style.configure('success.TButton', background='#4CAF50', foreground='white')
+            self.style.configure('TCheckbutton', background='#282828', foreground='white')
+        else:
+            self.style.configure('.', background='white', foreground='black')
+            self.style.configure('TEntry', fieldbackground='lightgray', foreground='black')
+            self.text_area.configure(background='lightgray', foreground='black', insertbackground='black')
+            self.style.configure('success.TButton', background='#4CAF50', foreground='black')
+            self.style.configure('TCheckbutton', background='white', foreground='black')
+
+    def show_menu(self):
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label="View Unlocked Entries", command=self.view_unlocked_entries)
+        menu.add_command(label="Current Locked Entries", command=self.show_locked_count)
+        menu.add_command(label="Clear All Locked Entries", command=self.clear_locked_entries)
+        menu.post(self.menu_button.winfo_rootx(), self.menu_button.winfo_rooty() + self.menu_button.winfo_height())
+
+    def view_unlocked_entries(self):
+        entries = self.get_unlocked_entries()
+        if not entries:
+            messagebox.showinfo("Info", "No unlocked entries found.")
+            return
+
+        unlocked_text = ""
+        for filepath, access_date in entries:
+            password = simpledialog.askstring("Password", f"Enter password for entry from {access_date.strftime('%Y-%m-%d %H:%M:%S')}:", show='*')
+            if password:
+                try:
+                    entry = load_entry(filepath, password)
+                    unlocked_text += f"\n\nEntry from {access_date.strftime('%Y-%m-%d %H:%M:%S')}:\n{entry}"
+                except Exception as e:
+                    messagebox.showerror("Error", f"Decryption failed: {e}")
+            else:
+                return
+
+        if unlocked_text:
+            text_window = tk.Toplevel(self.root)
+            text_window.title("Unlocked Entries")
+            text_area = scrolledtext.ScrolledText(text_window, wrap=tk.WORD, font=("monospace", 12))
+            text_area.insert(tk.END, unlocked_text)
+            text_area.pack(pady=10, padx=10, fill=tk.BOTH, expand=True)
+
+    def get_unlocked_entries(self):
+        unlocked_entries = []
+        for year in os.listdir("entries"):
+            year_path = os.path.join("entries", year)
+            if os.path.isdir(year_path):
+                for filename in os.listdir(year_path):
+                    filepath = os.path.join(year_path, filename)
+                    access_date = get_access_date(filepath)
+                    if datetime.datetime.now() >= access_date:
+                        unlocked_entries.append((filepath, access_date))
+        return unlocked_entries
+
+    def show_locked_count(self):
+        count = self.get_locked_count()
+        messagebox.showinfo("Locked Entries", f"Number of locked entries: {count}")
+
+    def get_locked_count(self):
+        count = 0
+        for year in os.listdir("entries"):
+            year_path = os.path.join("entries", year)
+            if os.path.isdir(year_path):
+                count += len(os.listdir(year_path))
+        return count
+
+    def clear_locked_entries(self):
+        if messagebox.askyesno("Confirm", "Are you sure you want to clear all locked entries? This action cannot be undone."):
+            try:
+                for year in os.listdir("entries"):
+                    year_path = os.path.join("entries", year)
+                    if os.path.isdir(year_path):
+                        for filename in os.listdir(year_path):
+                            filepath = os.path.join(year_path, filename)
+                            os.remove(filepath)
+                        os.rmdir(year_path)
+                messagebox.showinfo("Success", "All locked entries cleared.")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to clear entries: {e}")
 
 if __name__ == "__main__":
-    root = tk.Tk()
+    root = ttk.Window(themename="darkly")
     app = JournalApp(root)
     root.mainloop()
